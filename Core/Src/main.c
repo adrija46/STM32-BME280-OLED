@@ -25,6 +25,7 @@
 #include <string.h> //buffer handling and command parsing (strlen, strncpy, memset, strcmp)
 #include <stdio.h> //used to format numbers into text before sending over UART or drawing on the OLED (snprinf)
 #include "bme280.h" //Bosch's vendor-supplied platform-independent driver
+#include "sensor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,11 +50,9 @@ SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-static struct bme280_dev bme280_device; //Holds calibration data, interface type, and function pointers to my glue code
-static uint8_t bme280_i2c_address = BME280_I2C_ADDR_PRIM; //0x76, SDO pin is tied low
+//static struct bme280_dev bme280_device; //Holds calibration data, interface type, and function pointers to my glue code
+//static uint8_t bme280_i2c_address = BME280_I2C_ADDR_PRIM; //0x76, SDO pin is tied low
 static uint8_t bme280_initialized = 0;
-
-static struct bme280_data latest_sensor_data; //read by OLED and UART
 
 static uint32_t last_sample_time_ms = 0;
 static uint32_t sample_interval_ms = 1000;
@@ -91,27 +90,6 @@ static void MX_SPI1_Init(void);
 static void UART_Print(const char *message);
 static void I2C_Scan(void);
 static void BME280_ReadChipID(void);
-
-
-static BME280_INTF_RET_TYPE STM32_BME280_Read(
-    uint8_t reg_addr,
-    uint8_t *reg_data,
-    uint32_t length,
-    void *intf_ptr);
-
-static BME280_INTF_RET_TYPE STM32_BME280_Write(
-    uint8_t reg_addr,
-    const uint8_t *reg_data,
-    uint32_t length,
-    void *intf_ptr);
-
-static void STM32_BME280_DelayUs(
-    uint32_t period,
-    void *intf_ptr);
-
-static int8_t BME280_AppInit(void);
-
-static void BME280_SamplingProcess(void);
 
 static void UART_CommandProcess(void);
 
@@ -186,7 +164,7 @@ int main(void)
 
   HAL_Delay(100);
 
-  if (BME280_AppInit() == BME280_OK)
+  if (Sensor_Init() == BME280_OK)
   {
       last_sample_time_ms = HAL_GetTick() - sample_interval_ms;
   }
@@ -236,7 +214,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-      BME280_SamplingProcess();
+	  Sensor_Process();
       // BME280_DebugPrintProcess();
       UART_CommandProcess(); //Prints stored samples periodically only when stream_enabled is set.
 
@@ -566,167 +544,9 @@ static void BME280_ReadChipID(void)
     }
 }
 
-static BME280_INTF_RET_TYPE STM32_BME280_Read(
-    uint8_t reg_addr,
-    uint8_t *reg_data,
-    uint32_t length,
-    void *intf_ptr)
-{
-    if ((reg_data == NULL) || (intf_ptr == NULL))
-    {
-        return BME280_E_NULL_PTR;
-    }
 
-    uint8_t device_address = *(uint8_t *)intf_ptr;
 
-    HAL_StatusTypeDef status = HAL_I2C_Mem_Read(
-        &hi2c1,
-        device_address << 1,
-        reg_addr,
-        I2C_MEMADD_SIZE_8BIT,
-        reg_data,
-        (uint16_t)length,
-        100
-    );
 
-    return (status == HAL_OK) ? BME280_INTF_RET_SUCCESS : BME280_E_COMM_FAIL;
-}
-
-static BME280_INTF_RET_TYPE STM32_BME280_Write(
-    uint8_t reg_addr,
-    const uint8_t *reg_data,
-    uint32_t length,
-    void *intf_ptr)
-{
-    if ((reg_data == NULL) || (intf_ptr == NULL))
-    {
-        return BME280_E_NULL_PTR;
-    }
-
-    uint8_t device_address = *(uint8_t *)intf_ptr;
-
-    HAL_StatusTypeDef status = HAL_I2C_Mem_Write(
-        &hi2c1,
-        device_address << 1,
-        reg_addr,
-        I2C_MEMADD_SIZE_8BIT,
-        (uint8_t *)reg_data,
-        (uint16_t)length,
-        100
-    );
-
-    return (status == HAL_OK) ? BME280_INTF_RET_SUCCESS : BME280_E_COMM_FAIL;
-}
-
-static void STM32_BME280_DelayUs(
-    uint32_t period,
-    void *intf_ptr)
-{
-    (void)intf_ptr;
-
-    uint32_t delay_ms = (period + 999U) / 1000U;
-
-    if (delay_ms == 0U)
-    {
-        delay_ms = 1U;
-    }
-
-    HAL_Delay(delay_ms);
-}
-
-static int8_t BME280_AppInit(void)
-{
-    int8_t result;
-    struct bme280_settings settings;
-
-    memset(&bme280_device, 0, sizeof(bme280_device));
-    memset(&settings, 0, sizeof(settings));
-
-    bme280_device.intf = BME280_I2C_INTF;
-    bme280_device.intf_ptr = &bme280_i2c_address;
-    bme280_device.read = STM32_BME280_Read;
-    bme280_device.write = STM32_BME280_Write;
-    bme280_device.delay_us = STM32_BME280_DelayUs;
-
-    result = bme280_init(&bme280_device);
-
-    if (result != BME280_OK)
-    {
-        UART_Print("BME280 driver initialization failed.\r\n");
-        return result;
-    }
-
-    settings.filter = BME280_FILTER_COEFF_OFF;
-    settings.osr_h = BME280_OVERSAMPLING_1X;
-    settings.osr_p = BME280_OVERSAMPLING_1X;
-    settings.osr_t = BME280_OVERSAMPLING_1X;
-    settings.standby_time = BME280_STANDBY_TIME_1000_MS;
-
-    result = bme280_set_sensor_settings(
-        BME280_SEL_ALL_SETTINGS,
-        &settings,
-        &bme280_device
-    );
-
-    if (result != BME280_OK)
-    {
-        UART_Print("BME280 settings configuration failed.\r\n");
-        return result;
-    }
-
-    result = bme280_set_sensor_mode(
-        BME280_POWERMODE_NORMAL, // In normal mode it automatically cycles between measurement and standby. FW then periodically reads the most recently available measurement.
-        &bme280_device
-    );
-
-    if (result != BME280_OK)
-    {
-        UART_Print("BME280 mode configuration failed.\r\n");
-        return result;
-    }
-
-    bme280_initialized = 1;
-    UART_Print("BME280 initialized successfully.\r\n");
-
-    return BME280_OK;
-}
-
-/*
- * @brief verify initialization
- * check whether the interval has elapsed
- * read the latest sensor data
- */
-static void BME280_SamplingProcess(void)
-{
-    if (!bme280_initialized)
-    {
-        return;
-    }
-
-    uint32_t current_time_ms = HAL_GetTick();
-
-    if ((current_time_ms - last_sample_time_ms) < sample_interval_ms)
-    {
-        return;
-    }
-
-    last_sample_time_ms = current_time_ms;
-
-    int8_t result = bme280_get_sensor_data(
-        BME280_ALL,
-        &latest_sensor_data,
-        &bme280_device
-    );
-
-    if (result == BME280_OK)
-    {
-        sample_valid = 1;
-    }
-    else
-    {
-        sample_valid = 0;
-    }
-}
 
 /**
  * @brief UART receive-complete callback, fires once per received byte.
@@ -890,8 +710,8 @@ static void UART_CommandProcess(void)
         /*
          * Stop UART reporting only.
          *
-         * BME280_SamplingProcess() continues reading
-         * the sensor every second.
+         * Sensor_Process() continues reading
+         * the sensor at the configured sampling interval.
          */
         stream_enabled = 0U;
 
@@ -918,14 +738,16 @@ static void UART_CommandProcess(void)
      */
     UART_Print("> ");
 }
+
 static void BME280_PrintStoredSample(void)
 {
     char message[160];
+    SensorData data;
 
     /*
      * A sample is valid only after at least one successful sensor read.
      */
-    if (sample_valid == 0U)
+    if (Sensor_HasValidData() == 0U)
     {
         UART_Print(
             "\r\nSensor reading is not available yet.\r\n"
@@ -935,9 +757,14 @@ static void BME280_PrintStoredSample(void)
     }
 
     /*
+     * Ask the sensor module for the latest values.
+     */
+    Sensor_GetLatestData(&data);
+
+    /*
      * Convert the stored floating-point values into readable text.
      *
-     * The Bosch driver returns:
+     * SensorData contains:
      * - temperature in degrees Celsius
      * - humidity in percent
      * - pressure in pascals
@@ -951,14 +778,13 @@ static void BME280_PrintStoredSample(void)
         "Temperature: %.2f C\r\n"
         "Humidity: %.2f %%\r\n"
         "Pressure: %.2f hPa\r\n",
-        latest_sensor_data.temperature,
-        latest_sensor_data.humidity,
-        latest_sensor_data.pressure / 100.0
+        data.temperature,
+        data.humidity,
+        data.pressure / 100.0f
     );
 
     UART_Print(message);
 }
-
 /**
  * @brief Periodically prints the latest stored sensor reading.
  *
@@ -967,6 +793,7 @@ static void BME280_PrintStoredSample(void)
  * Sampling continues every second even when streaming is disabled.
  * This function only controls periodic UART reporting.
  */
+
 static void BME280_StreamingProcess(void)
 {
     /*
@@ -1060,12 +887,13 @@ static void PrintSystemStatus(void)
 static void OLED_DisplaySensorData(void)
 {
     char line[24];
+    SensorData data;
 
     /*
-     * Don't display measurements until the BME280
+     * Don't display measurements until the sensor module
      * has produced at least one valid sample.
      */
-    if (sample_valid == 0U)
+    if (Sensor_HasValidData() == 0U)
     {
         OLED_Clear();
 
@@ -1079,6 +907,11 @@ static void OLED_DisplaySensorData(void)
 
         return;
     }
+
+    /*
+     * Get the latest sensor values from the sensor module.
+     */
+    Sensor_GetLatestData(&data);
 
     /*
      * Start with a blank framebuffer.
@@ -1101,7 +934,7 @@ static void OLED_DisplaySensorData(void)
         line,
         sizeof(line),
         "TEMP: %.1f C",
-        latest_sensor_data.temperature
+        data.temperature
     );
 
     OLED_DrawString(
@@ -1117,7 +950,7 @@ static void OLED_DisplaySensorData(void)
         line,
         sizeof(line),
         "HUM: %.1f %%",
-        latest_sensor_data.humidity
+        data.humidity
     );
 
     OLED_DrawString(
@@ -1128,15 +961,14 @@ static void OLED_DisplaySensorData(void)
 
     /*
      * Atmospheric pressure.
-     *
-     * Bosch gives pressure in Pa.
+     * SensorData stores pressure in Pa.
      * Divide by 100 to display hPa.
      */
     snprintf(
         line,
         sizeof(line),
         "PRES: %.0f",
-        latest_sensor_data.pressure / 100.0
+        data.pressure / 100.0f
     );
 
     OLED_DrawString(
