@@ -26,6 +26,7 @@
 #include <stdio.h> //used to format numbers into text before sending over UART or drawing on the OLED (snprinf)
 #include "bme280.h" //Bosch's vendor-supplied platform-independent driver
 #include "sensor.h"
+#include "i2c_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -429,11 +430,10 @@ static void I2C_Scan(void)
     {
         HAL_StatusTypeDef result;
 
-        result = HAL_I2C_IsDeviceReady(
-            &hi2c1, //I2C peripheral handle
-            address << 1, //STM32 HAL expects the 7-bit address shifted into the address byte position
-            3, //How many times to retry the handshake before giving up on this address
-            20 //Max milliseconds to wait for a response, per trial
+        result = I2C_IF_IsDeviceReady(
+            (uint8_t)address,
+            3U,
+            20U
         );
 // 127 × 3 × 20 ms ≈ 7.6 seconds, slow loop, runs once at boot in the main()
         if (result == HAL_OK)
@@ -469,22 +469,21 @@ static void I2C_Scan(void)
 
 static void BME280_ReadChipID(void)
 {
-    const uint16_t bme280_address = (0x76 << 1);
-    const uint8_t chip_id_register = 0xD0; //id register is at 0xD0 and contains 0x60
+	const uint8_t bme280_address = 0x76U;
+	const uint8_t chip_id_register = 0xD0U; //id register is at 0xD0 and contains 0x60
 
     uint8_t chip_id = 0;
     char message[64];
 
     HAL_StatusTypeDef result;
+
 //Talk to device 0x76, then read internal register 0xD0.
-    result = HAL_I2C_Mem_Read(
-        &hi2c1,
-        bme280_address,
-        chip_id_register,
-        I2C_MEMADD_SIZE_8BIT,
-        &chip_id,
-        1,
-        100 // <- timeout ceiling, not a fixed delay
+    result = I2C_IF_ReadRegister(
+            bme280_address,
+            chip_id_register,
+            &chip_id,
+            1U,
+            100U // <- timeout ceiling, not a fixed delay
     ); //blocking function
 
     if (result == HAL_OK)
@@ -498,7 +497,7 @@ static void BME280_ReadChipID(void)
 
         Console_Print(message);
 
-        if (chip_id == 0x60)
+        if (chip_id == 0x60U)
         {
         	Console_Print("Confirmed: BME280 detected.\r\n");
         }
