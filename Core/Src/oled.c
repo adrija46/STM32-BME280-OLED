@@ -8,8 +8,8 @@
 
 #include "oled.h"
 #include <string.h>
+#include "spi_if.h"
 
-extern SPI_HandleTypeDef hspi1; //hspi1 exists in another source file; this will let me use that same one here
 /*
  * OLED framebuffer.
  * 128 x 64 monochrome pixels:
@@ -72,11 +72,10 @@ static HAL_StatusTypeDef OLED_WriteCommand(uint8_t command)
     );
 
     /* Transmit one byte using SPI1. */
-    status = HAL_SPI_Transmit(
-        &hspi1,
+    status = SPI_IF_Transmit(
         &command,
-        1,
-        100
+        1U,
+        100U
     );
 
     /* Release OLED. */
@@ -119,11 +118,10 @@ static HAL_StatusTypeDef OLED_WriteData(
         GPIO_PIN_SET
     );
 
-    status = HAL_SPI_Transmit(
-        &hspi1,
+    status = SPI_IF_Transmit(
         data,
         length,
-        100
+        100U
     );
 
     /* Release OLED. */
