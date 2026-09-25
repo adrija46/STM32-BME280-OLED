@@ -27,6 +27,7 @@
 #include "bme280.h" //Bosch's vendor-supplied platform-independent driver
 #include "sensor.h"
 #include "i2c_if.h"
+#include "uart_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -146,13 +147,11 @@ int main(void)
       "STM32 UART test working\r\n"
       "BME280 project started\r\n";
 
-  HAL_UART_Transmit(
-      &huart2,
-      (uint8_t *)message,
-      strlen(message),
+  UART_IF_Transmit(
+      (const uint8_t *)message,
+      (uint16_t)strlen(message),
       HAL_MAX_DELAY
   );
-
   HAL_Delay(100);
 
   I2C_Scan();

@@ -6,10 +6,8 @@
  */
 
 #include "console.h"
-
 #include <string.h>
-
-extern UART_HandleTypeDef huart2;
+#include "uart_if.h"
 
 #define CONSOLE_COMMAND_BUFFER_SIZE 64U
 
@@ -25,21 +23,19 @@ void Console_Print(const char *message)
         return;
     }
 
-    HAL_UART_Transmit(
-        &huart2,
-        (uint8_t *)message,
-        strlen(message),
+    UART_IF_Transmit(
+        (const uint8_t *)message,
+        (uint16_t)strlen(message),
         HAL_MAX_DELAY
     );
 }
 
 void Console_Init(void)
 {
-    HAL_UART_Receive_IT(
-        &huart2,
-        &uart_rx_byte,
-        1
-    );
+	UART_IF_ReceiveIT(
+	    &uart_rx_byte,
+	    1U
+	);
 }
 
 uint8_t Console_CommandReady(void)
@@ -71,7 +67,7 @@ void Console_ClearCommand(void)
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART2)
+	if (UART_IF_IsConsoleUART(huart) != 0U)
     {
         if ((uart_rx_byte == '\r') || (uart_rx_byte == '\n'))
         {
@@ -90,10 +86,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             }
         }
 
-        HAL_UART_Receive_IT(
-            &huart2,
+        UART_IF_ReceiveIT(
             &uart_rx_byte,
-            1
+            1U
         );
     }
 }
