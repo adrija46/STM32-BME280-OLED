@@ -9,7 +9,7 @@
 #include "bme280.h"
 #include <string.h>
 
-extern I2C_HandleTypeDef hi2c1;
+#include "i2c_if.h"
 
 static struct bme280_dev bme280_device;
 static uint8_t bme280_i2c_address = BME280_I2C_ADDR_PRIM;
@@ -90,14 +90,12 @@ static BME280_INTF_RET_TYPE STM32_BME280_Read(
 
     uint8_t device_address = *(uint8_t *)intf_ptr;
 
-    HAL_StatusTypeDef status = HAL_I2C_Mem_Read(
-        &hi2c1,
-        device_address << 1,
+    HAL_StatusTypeDef status = I2C_IF_ReadRegister(
+        device_address,
         reg_addr,
-        I2C_MEMADD_SIZE_8BIT,
         reg_data,
         (uint16_t)length,
-        100
+        100U
     );
 
     return (status == HAL_OK) ? BME280_INTF_RET_SUCCESS : BME280_E_COMM_FAIL;
@@ -116,14 +114,12 @@ static BME280_INTF_RET_TYPE STM32_BME280_Write(
 
     uint8_t device_address = *(uint8_t *)intf_ptr;
 
-    HAL_StatusTypeDef status = HAL_I2C_Mem_Write(
-        &hi2c1,
-        device_address << 1,
+    HAL_StatusTypeDef status = I2C_IF_WriteRegister(
+        device_address,
         reg_addr,
-        I2C_MEMADD_SIZE_8BIT,
-        (uint8_t *)reg_data,
+        reg_data,
         (uint16_t)length,
-        100
+        100U
     );
 
     return (status == HAL_OK) ? BME280_INTF_RET_SUCCESS : BME280_E_COMM_FAIL;
